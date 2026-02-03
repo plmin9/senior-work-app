@@ -2,54 +2,44 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_js_eval import get_geolocation
 
 # --- 1. 페이지 설정 ---
 st.set_page_config(page_title="근태/휴가 관리", layout="wide")
 
-# --- 2. 디자인 CSS ---
+# --- 2. 디자인 CSS (UI 최적화) ---
 st.markdown("""
     <style>
     .stApp { background-color: #F8F9FA; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; background-color: #F8F9FA; }
-    .stTabs [data-baseweb="tab"] { font-size: 20px; font-weight: bold; color: #888; }
-    .stTabs [aria-selected="true"] { color: #333 !important; border-bottom-color: #333 !important; }
+    .stTabs [data-baseweb="tab-list"] { background-color: #F8F9FA; }
+    .stTabs [data-baseweb="tab"] { font-size: 18px; font-weight: bold; }
 
-    /* 휴가 박스 스타일 */
-    .vacation-container { display: flex; gap: 10px; margin-bottom: 20px; }
+    /* 출퇴근 카드 */
+    .time-card {
+        background: white; padding: 20px; border-radius: 15px;
+        text-align: center; border: 1px solid #EEE; margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    .time-val { font-size: 32px; font-weight: bold; color: #222; }
+
+    /* 위치 정보 박스 */
+    .location-box {
+        background: white; padding: 15px; border-radius: 12px;
+        border: 1px solid #E0E0E0; height: 100%;
+    }
+    .gps-label { font-size: 14px; color: #666; font-weight: bold; margin-bottom: 5px; }
+    .gps-value { font-size: 15px; color: #1A73E8; font-family: monospace; }
+
+    /* 휴가 박스 */
+    .vacation-container { display: flex; gap: 8px; margin-bottom: 15px; }
     .vacation-box {
-        flex: 1; background: white; padding: 20px; border-radius: 15px;
-        text-align: center; border: 1px solid #F0F0F0; box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        flex: 1; background: white; padding: 15px; border-radius: 12px;
+        text-align: center; border: 1px solid #F0F0F0;
     }
     .vacation-box.active { background-color: #EBF5FF; border: 1px solid #C2E0FF; }
-    .v-label { font-size: 14px; color: #666; margin-bottom: 8px; }
-    .v-value { font-size: 20px; font-weight: bold; color: #333; }
-    .v-value.blue { color: #1A73E8; }
-
-    /* 캐릭터 프로그레스 바 */
-    .char-progress-container {
-        background: white; padding: 20px; border-radius: 15px; 
-        margin-bottom: 30px; border: 1px solid #F0F0F0;
-    }
-    .char-msg-box {
-        background: #EBF5FF; padding: 10px 15px; border-radius: 10px;
-        font-size: 14px; color: #1A73E8; display: inline-block; margin-left: 10px;
-    }
-
-    /* 근태 시간 카드 */
-    .time-card {
-        background: white; padding: 30px; border-radius: 20px;
-        text-align: center; border: 1px solid #EEE; margin-bottom: 20px;
-    }
-    .time-val { font-size: 38px; font-weight: bold; color: #222; }
-
-    /* GPS 정보창 */
-    .gps-info {
-        background: #F1F3F4; padding: 15px; border-radius: 12px;
-        font-size: 13px; color: #555; font-family: monospace;
-        border: 1px solid #DDD; margin-top: 10px;
-    }
+    .v-label { font-size: 13px; color: #666; }
+    .v-value { font-size: 18px; font-weight: bold; color: #333; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -89,9 +79,10 @@ def get_chosung(text):
     return CHOSUNG_LIST[char_code // 588] if 0 <= char_code <= 11171 else str(text)[0].upper()
 
 # --- 4. 메인 화면 ---
-st.title("근태 현황")
+st.markdown("## 🏢 스마트 근태관리")
 
-cho = st.radio("성씨 초성", ["전체", "ㄱ","ㄴ","ㄷ","ㄹ","ㅁ","ㅂ","ㅅ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"], horizontal=True)
+# 본인 선택
+cho = st.radio("성씨 초성 선택", ["전체", "ㄱ","ㄴ","ㄷ","ㄹ","ㅁ","ㅂ","ㅅ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"], horizontal=True)
 names = df_vacation['성함'].tolist() if not df_vacation.empty else []
 filtered = names if cho == "전체" else [n for n in names if get_chosung(n) == cho]
 selected_user = st.selectbox("본인 성함을 선택하세요", filtered if filtered else ["데이터 없음"])
@@ -99,108 +90,97 @@ selected_user = st.selectbox("본인 성함을 선택하세요", filtered if fil
 st.divider()
 
 # --- 5. 탭 구성 ---
-tab_attendance, tab_vacation = st.tabs(["근태", "휴가"])
+tab_attendance, tab_vacation = st.tabs(["🕒 근태관리", "🏖️ 휴가관리"])
 
 # --- [근태 탭] ---
 with tab_attendance:
     now = datetime.now()
-    st.write(f"📅 {now.strftime('%Y-%m-%d (%a) %H:%M:%S')}")
+    st.write(f"📅 {now.strftime('%Y년 %m월 %d일 %H:%M')}")
     
     if 'arrived' not in st.session_state: st.session_state.arrived = False
     if 'start_time' not in st.session_state: st.session_state.start_time = "-"
 
+    # 1. 출퇴근 시간 표시 카드 (상단 배치)
     st.markdown(f"""
         <div class="time-card">
-            <div style="display:flex; justify-content:center; align-items:center; gap:30px;">
-                <div><div style="color:#888; font-size:14px;">출근 시간</div><div class="time-val">{st.session_state.start_time}</div></div>
-                <div style="font-size:30px; color:#EEE;">➔</div>
-                <div><div style="color:#888; font-size:14px;">퇴근 시간</div><div class="time-val">-</div></div>
+            <div style="display:flex; justify-content:center; align-items:center; gap:20px;">
+                <div><div style="color:#888; font-size:12px;">출근</div><div class="time-val">{st.session_state.start_time}</div></div>
+                <div style="font-size:24px; color:#DDD;">➔</div>
+                <div><div style="color:#888; font-size:12px;">퇴근</div><div class="time-val">-</div></div>
             </div>
         </div>
     """, unsafe_allow_html=True)
     
-    # --- GPS 및 지도 섹션 ---
-    st.subheader("📍 현재 위치 확인")
+    # 2. 버튼 배치 (상단 배치)
     loc = get_geolocation()
-    
-    if loc:
-        lat = loc['coords']['latitude']
-        lon = loc['coords']['longitude']
-        
-        # 지도 표시
-        df_loc = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-        st.map(df_loc, zoom=15)
-        
-        # 위도 경도 텍스트 표시
-        st.markdown(f"""
-            <div class="gps-info">
-                🛰️ <b>위도(Latitude):</b> {lat}<br>
-                🛰️ <b>경도(Longitude):</b> {lon}
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.warning("GPS 위치 정보를 불러오는 중입니다. 브라우저의 위치 권한을 허용해 주세요.")
-
-    st.write("") # 간격
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🚀 출근하기", use_container_width=True, disabled=st.session_state.arrived or not loc):
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🚀 출근하기", use_container_width=True, type="primary", disabled=st.session_state.arrived or not loc):
             st.session_state.arrived = True
             st.session_state.start_time = datetime.now().strftime("%H:%M:%S")
+            lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
             sheet_attendance.append_row([selected_user, now.strftime("%Y-%m-%d"), st.session_state.start_time, "", "출근", "", lat, lon])
             st.rerun()
-    with col2:
+    with col_btn2:
         if st.button("🏠 퇴근하기", use_container_width=True, disabled=not st.session_state.arrived):
             st.session_state.arrived = False
             st.session_state.start_time = "-"
             st.success("고생하셨습니다!")
 
+    st.divider()
+
+    # 3. 위치 정보 (하단 배치, 맵 사이즈 축소 및 정보 병렬 배치)
+    st.markdown("##### 📍 현재 위치 확인")
+    if loc:
+        lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
+        col_map, col_gps = st.columns([1.5, 1])
+        
+        with col_map:
+            # 맵 높이를 조절하기 위해 표 형태로 시각화
+            st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=14, use_container_width=True)
+        
+        with col_gps:
+            st.markdown(f"""
+                <div class="location-box">
+                    <div class="gps-label">🛰️ 위도 (Latitude)</div>
+                    <div class="gps-value">{lat:.6f}</div>
+                    <div style="margin-top:10px;" class="gps-label">🛰️ 경도 (Longitude)</div>
+                    <div class="gps-value">{lon:.6f}</div>
+                    <hr style="margin:10px 0;">
+                    <div style="font-size:12px; color:#28a745;">✔️ 위치 확인 완료</div>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("위치 정보를 수신 중입니다... 잠시만 기다려 주세요.")
+
 # --- [휴가 탭] ---
 with tab_vacation:
-    st.header("휴가 관리")
+    st.subheader("🏖️ 나의 휴가 현황")
     if not df_vacation.empty and selected_user in df_vacation['성함'].values:
         u = df_vacation[df_vacation['성함'] == selected_user].iloc[0]
-        v_total = to_num(u.get('총연차', 0))
-        v_used = to_num(u.get('사용연차', 0))
-        v_rem = to_num(u.get('잔여연차', 0))
+        v_total, v_used, v_rem = to_num(u.get('총연차', 0)), to_num(u.get('사용연차', 0)), to_num(u.get('잔여연차', 0))
         
         st.markdown(f"""
             <div class="vacation-container">
-                <div class="vacation-box active">
-                    <div style="font-size:30px;">🏖️</div>
-                    <div class="v-label">잔여 연차</div>
-                    <div class="v-value blue">{int(v_rem)}d</div>
-                </div>
-                <div class="vacation-box">
-                    <div style="font-size:30px;">📅</div>
-                    <div class="v-label">사용 연차</div>
-                    <div class="v-value">{int(v_used)}d</div>
-                </div>
-                <div class="vacation-box">
-                    <div style="font-size:30px;">✈️</div>
-                    <div class="v-label">총 연차</div>
-                    <div class="v-value">{int(v_total)}d</div>
-                </div>
+                <div class="vacation-box active"><div class="v-label">잔여</div><div class="v-value" style="color:#1A73E8;">{int(v_rem)}d</div></div>
+                <div class="vacation-box"><div class="v-label">사용</div><div class="v-value">{int(v_used)}d</div></div>
+                <div class="vacation-box"><div class="v-label">총</div><div class="v-value">{int(v_total)}d</div></div>
             </div>
         """, unsafe_allow_html=True)
         
-        prog_ratio = min(v_used / v_total, 1.0) if v_total > 0 else 0.0
-        st.markdown(f"""
-            <div class="char-progress-container">
-                <div style="display:flex; align-items:center; margin-bottom:10px;">
-                    <span style="font-size:40px;">🐰</span>
-                    <div class="char-msg-box">연차 현황을 확인하세요!</div>
-                </div>
-        """, unsafe_allow_html=True)
-        st.progress(prog_ratio)
-        st.markdown(f"<div style='text-align:right; color:#888; font-size:12px;'>{int(prog_ratio*100)}% ({int(v_used)} / {int(v_total)})</div></div>", unsafe_allow_html=True)
+        prog = min(v_used / v_total, 1.0) if v_total > 0 else 0.0
+        st.progress(prog)
+        st.caption(f"연차 사용률: {int(prog*100)}%")
 
     if st.button("➕ 휴가 신청하기", use_container_width=True):
         @st.dialog("새 휴가 신청")
         def apply_form():
-            st.date_input("휴가 일자")
-            st.selectbox("휴가 종류", ["연차", "반차", "병가"])
-            if st.button("신청서 제출"):
-                st.success("신청되었습니다.")
+            st.date_input("날짜 선택")
+            st.selectbox("종류", ["연차", "반차", "병가"])
+            if st.button("제출"):
+                st.success("신청 완료")
                 st.rerun()
         apply_form()
+
+st.write("<br><br>", unsafe_allow_html=True)
+st.caption("실버 복지 사업단 v2.8")
