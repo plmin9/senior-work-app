@@ -2,36 +2,39 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.title("👵 노인일자리 시스템")
-
 def get_client():
     try:
         s = st.secrets["connections"]["gsheets"]
-        # 가공 없이 Secrets 값을 직접 전달
-        creds = Credentials.from_service_account_info(
-            st.secrets["connections"]["gsheets"],
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-        )
+        
+        # [자동 교정 로직]
+        raw_key = s["private_key"]
+        
+        # 1. 실제 줄바꿈 문자로 변환
+        clean_key = raw_key.replace("\\n", "\n")
+        
+        # 2. 앞뒤 불필요한 공백 제거
+        clean_key = clean_key.strip()
+        
+        # 3. 마지막 줄바꿈이 없다면 강제로 추가 (PEM 파일의 표준 규격)
+        if not clean_key.endswith("\n"):
+            clean_key += "\n"
+
+        creds_info = {
+            "type": s["type"],
+            "project_id": s["project_id"],
+            "private_key_id": s["private_key_id"],
+            "private_key": clean_key, # 교정된 키 사용
+            "client_email": s["client_email"],
+            "client_id": s["client_id"],
+            "auth_uri": s["auth_uri"],
+            "token_uri": s["token_uri"],
+            "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": s["client_x509_cert_url"]
+        }
+        
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"❌ 연결 설정 오류: {e}")
         return None
-
-client = get_client()
-
-if client:
-    try:
-        # 시트 주소로 파일 열기
-        doc = client.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
-        st.success(f"✅ [{doc.title}] 연결 성공!")
-        
-        # 첫 번째 시트 명단 가져오기
-        sheet = doc.get_worksheet(0)
-        data = sheet.get_all_records()
-        st.write("📋 시트 데이터를 성공적으로 불러왔습니다.")
-        
-    except Exception as e:
-        st.error(f"❌ 시트 접근 오류: {e}")
