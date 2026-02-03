@@ -9,14 +9,23 @@ SHEET_ID = "1y5XoW1L_fO7V7jW4eA7P-V7yvXo_U9C-V7yvXo_U9C" # 예시이므로 본�
 
 def get_gspread_client():
     try:
-        # Streamlit Secrets에서 항목별로 가져와서 딕셔너리 생성
         if "gcp_service_account" in st.secrets:
             s = st.secrets["gcp_service_account"]
+            
+            # 비밀키 세척 과정
+            p_key = s["private_key"]
+            # 1. 실제 줄바꿈을 \n 문자로 변환
+            p_key = p_key.replace("\n", "\\n")
+            # 2. 중복된 역슬래시 제거
+            p_key = p_key.replace("\\\\n", "\\n")
+            # 3. 최종적으로 구글 라이브러리가 쓰는 형태(\n)로 변환
+            p_key = p_key.replace("\\n", "\n")
+            
             key_info = {
                 "type": s["type"],
                 "project_id": s["project_id"],
                 "private_key_id": s["private_key_id"],
-                "private_key": s["private_key"],
+                "private_key": p_key,
                 "client_email": s["client_email"],
                 "client_id": s["client_id"],
                 "auth_uri": s["auth_uri"],
@@ -27,7 +36,7 @@ def get_gspread_client():
             return gspread.service_account_from_dict(key_info)
         return None
     except Exception as e:
-        st.error(f"인증 오류: {e}")
+        st.error(f"인증 오류 상세: {e}")
         return None
 
 st.title("👵 노인일자리 출퇴근 시스템")
@@ -76,3 +85,4 @@ if client:
         st.error(f"데이터 연결 오류: {e}")
 else:
     st.error("구글 서비스 인증에 실패했습니다. Secrets 설정을 확인하세요.")
+
