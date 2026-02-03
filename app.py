@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from streamlit_js_eval import get_geolocation
 
-# --- 1. 페이지 설정 및 디자인 ---
+# --- 1. 페이지 설정 및 디자인 (기존 스타일 유지) ---
 st.set_page_config(page_title="스마트경로당지원 근태관리", layout="wide")
 
 st.markdown("""
@@ -71,7 +71,7 @@ if 'disp_start' not in st.session_state: st.session_state.disp_start = "-"
 if 'disp_end' not in st.session_state: st.session_state.disp_end = "-"
 if 'arrived' not in st.session_state: st.session_state.arrived = False
 
-# --- 5. 메인 화면 ---
+# --- 5. 메인 화면 상단 (선택 영역) ---
 st.markdown('<div class="main-title">🏢 스마트경로당지원 근태관리</div>', unsafe_allow_html=True)
 
 # 초성 선택
@@ -84,67 +84,80 @@ all_names = df_vacation['성함'].tolist() if not df_vacation.empty else []
 filtered_names = all_names if cho == "전체" else [n for n in all_names if get_chosung(n) == cho]
 selected_user = st.selectbox("성함 선택", filtered_names if filtered_names else ["데이터 없음"], label_visibility="collapsed")
 
-# --- 업무 내용 다중 선택 및 상세 입력 ---
-st.markdown('<div class="custom-label">📝 오늘 수행할 업무를 모두 선택해 주세요 (중복 가능)</div>', unsafe_allow_html=True)
+# 업무 선택 및 입력
+st.markdown('<div class="custom-label">📝 수행 업무 선택 및 상세내용 입력</div>', unsafe_allow_html=True)
 work_options = ["경로당 청소", "배식 및 주방지원", "시설물 안전점검", "사무 업무 보조", "행사 지원", "기타 활동"]
 selected_works = st.multiselect("업무 선택", work_options, placeholder="업무를 골라주세요")
-
-st.markdown('<div class="custom-label">✏️ 상세 업무 내용 (직접 입력)</div>', unsafe_allow_html=True)
-work_detail = st.text_input("상세 업무 입력", placeholder="예: 거실 바닥 청소 및 가스점검 완료", label_visibility="collapsed")
-
-# 최종 저장될 업무 텍스트 합치기
+work_detail = st.text_input("상세 업무 입력", placeholder="직접 입력 내용을 적어주세요", label_visibility="collapsed")
 combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
 st.write("<br>", unsafe_allow_html=True)
 
-# --- 6. 탭 구성 ---
+# --- 6. 탭 구성 (근태관리 핵심 로직) ---
 tab_attendance, tab_vacation = st.tabs(["🕒 근태관리", "🏖️ 휴가관리"])
 
 with tab_attendance:
     now = datetime.now()
     today_date = now.strftime("%Y-%m-%d")
     
-    st.markdown(f'<div style="background: white; padding: 20px; border-radius: 20px; border: 2px solid #00838F; text-align: center; margin-bottom: 20px;">'
-                f'<div style="display:flex; justify-content:space-around; align-items:center;">'
-                f'<div><div style="font-size:0.9rem; color:#888;">출근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_start}</div></div>'
-                f'<div style="font-size:2.5rem; color:#00838F; font-weight:200;">|</div>'
-                f'<div><div style="font-size:0.9rem; color:#888;">퇴근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_end}</div></div>'
-                f'</div></div>', unsafe_allow_html=True)
+    # 시간 표시 현황판
+    st.markdown(f"""
+        <div style="background: white; padding: 20px; border-radius: 20px; border: 2px solid #00838F; text-align: center; margin-bottom: 20px;">
+            <div style="display:flex; justify-content:space-around; align-items:center;">
+                <div><div style="font-size:0.9rem; color:#888;">출근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_start}</div></div>
+                <div style="font-size:2.5rem; color:#00838F; font-weight:200;">|</div>
+                <div><div style="font-size:0.9rem; color:#888;">퇴근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_end}</div></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     loc = get_geolocation()
     col1, col2 = st.columns(2)
     
     with col1:
+        # 1. 출근하기: 구글 시트에 '새로운 행'을 추가하며 출근시간 기록
         if st.button("🚀 출근하기", use_container_width=True, disabled=st.session_state.arrived or not loc):
             if not selected_works and not work_detail:
-                st.warning("⚠️ 수행할 업무를 선택하거나 내용을 적어주세요!")
+                st.warning("⚠️ 업무 내용을 선택하거나 입력해주세요!")
             else:
                 st.session_state.disp_start = datetime.now().strftime("%H:%M:%S")
                 st.session_state.arrived = True
                 lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
-                # 업무내용 컬럼(6번째)에 다중선택+상세내용 통합 저장
+                
+                # 구글 시트 구조: [A성함, B날짜, C출근시간, D퇴근시간, E상태, F업무내용, G위도, H경도]
                 sheet_attendance.append_row([selected_user, today_date, st.session_state.disp_start, "", "출근", combined_work, lat, lon])
                 st.rerun()
             
     with col2:
+        # 2. 퇴근하기: 오늘 생성된 출근 행을 찾아 '퇴근시간' 칸(D열)을 업데이트
         if st.button("🏠 퇴근하기", use_container_width=True, disabled=not st.session_state.arrived or st.session_state.disp_end != "-"):
             st.session_state.disp_end = datetime.now().strftime("%H:%M:%S")
             try:
-                all_data = sheet_attendance.get_all_values()
-                target_row_idx = -1
-                for i, row in enumerate(all_data):
+                # 시트의 전체 데이터를 읽어와서 본인의 오늘 출근 행 번호 찾기
+                all_records = sheet_attendance.get_all_values()
+                target_row = -1
+                for idx, row in enumerate(all_records):
+                    # 이름(0번열)과 날짜(1번열)가 일치하고 상태(4번열)가 '출근'인 행 탐색
                     if row[0] == selected_user and row[1] == today_date and row[4] == "출근":
-                        target_row_idx = i + 1
-                if target_row_idx != -1:
-                    sheet_attendance.update_cell(target_row_idx, 4, st.session_state.disp_end)
-                    sheet_attendance.update_cell(target_row_idx, 5, "퇴근")
-                    st.success("오늘 하루도 고생 많으셨습니다!")
-                else: st.error("출근 기록을 찾을 수 없습니다.")
-            except Exception as e: st.error(f"오류: {e}")
+                        target_row = idx + 1 # gspread는 인덱스가 1부터 시작
+                
+                if target_row != -1:
+                    # 해당 행의 4번째 열(D열)에 퇴근시간 등록, 5번째 열(E열) 상태를 '퇴근'으로 변경
+                    sheet_attendance.update_cell(target_row, 4, st.session_state.disp_end)
+                    sheet_attendance.update_cell(target_row, 5, "퇴근")
+                    st.success("퇴근 시간이 안전하게 등록되었습니다!")
+                else:
+                    # 혹시 행을 못 찾을 경우를 대비해 마지막에 추가
+                    sheet_attendance.append_row([selected_user, today_date, "", st.session_state.disp_end, "퇴근", combined_work, "", ""])
+                    st.warning("기존 출근 기록을 찾지 못해 새 줄에 기록되었습니다.")
+            except Exception as e:
+                st.error(f"시트 업데이트 오류: {e}")
+            
             st.balloons()
             st.rerun()
 
     st.divider()
+    # 지도 영역 (기존 디자인 동일)
     st.markdown('<div class="custom-label">📍 현재 위치 확인</div>', unsafe_allow_html=True)
     if loc:
         lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
@@ -154,7 +167,7 @@ with tab_attendance:
             st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=15, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with m2:
-            st.info(f"수신 위치: {lat:.4f} / {lon:.4f}\n\nGPS 신호 정상")
+            st.info(f"수신 위치: {lat:.4f} / {lon:.4f}\n\n위치 인증 완료")
 
 with tab_vacation:
     st.markdown('<div class="custom-label">🏖️ 나의 휴가 현황</div>', unsafe_allow_html=True)
@@ -162,4 +175,4 @@ with tab_vacation:
         u = df_vacation[df_vacation['성함'] == selected_user].iloc[0]
         st.success(f"🌟 {selected_user}님, 남은 휴가는 **{u.get('잔여연차', 0)}일**입니다.")
 
-st.caption("실버 복지 사업단 v4.2 | 업무 다중선택 & 서술형 입력 지원")
+st.caption("실버 복지 사업단 v4.3 | 출퇴근 통합 기록 시스템")
