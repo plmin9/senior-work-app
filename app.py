@@ -13,18 +13,28 @@ JSON_KEY = "key.json"
 
 st.set_page_config(page_title="노인일자리 관리시스템", layout="centered")
 
-# [보완된 인증 함수]
+# [보안 및 에러 방지용 인증 함수]
 def get_gspread_client():
     try:
+        # Streamlit Cloud 환경 (Secrets 사용)
         if "gcp_service_account" in st.secrets:
-            # strict=False 옵션을 주어 제어문자(줄바꿈 등) 오류를 방지합니다.
-            info = json.loads(st.secrets["gcp_service_account"], strict=False)
+            raw_data = st.secrets["gcp_service_account"]
             
-            # private_key의 줄바꿈 문자가 깨졌을 경우를 대비해 다시 한번 정리합니다.
-            if "private_key" in info:
-                info["private_key"] = info["private_key"].replace("\\n", "\n")
+            # 1. 데이터가 문자열(str)인 경우 JSON으로 변환
+            if isinstance(raw_data, str):
+                # 줄바꿈 문자로 인한 PEM 에러 방지 및 엄격한 해석 방지
+                key_info = json.loads(raw_data, strict=False)
+            else:
+                # 2. 이미 딕셔너리 객체인 경우 그대로 사용
+                key_info = raw_data
                 
-            return gspread.service_account_from_dict(info)
+            # 비밀키 줄바꿈 깨짐 현상 최종 수정
+            if "private_key" in key_info:
+                key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
+                
+            return gspread.service_account_from_dict(key_info)
+            
+        # 로컬 환경 (key.json 파일 사용)
         else:
             return gspread.service_account(filename=JSON_KEY)
     except Exception as e:
@@ -48,7 +58,7 @@ try:
         # (2) 구글 시트 쓰기 권한 연결
         client = get_gspread_client()
         
-        if client:
+        if client is not None:
             log_sheet = client.open_by_key(SHEET_ID).worksheet("근태로그")
             
             # [결재 확인 로직]
@@ -89,7 +99,7 @@ try:
 
                 st.subheader("📝 오늘의 활동 기록")
                 work_types = st.multiselect("업무 종류:", ["상담", "홍보", "환경정비", "교육", "기타"])
-                work_memo = st.text_area("상세 내용을 적어주세요:", placeholder="예: 어르신 3명 상담 완료")
+                work_memo = st.text_area("상세 내용을 적어주세요:", placeholder="어르신 방문 및 상담...")
 
                 # (5) 출퇴근 버튼
                 col1, col2 = st.columns(2)
@@ -108,13 +118,9 @@ try:
                         log_sheet.append_row([selected_name, now, "퇴근", lat, lon, summary, "대기"])
                         st.warning(f"퇴근 완료: {now}")
             else:
-                st.info("💡 위치 권한 허용이 필요합니다. 잠시만 기다려주시거나 새로고침 해주세요.")
+                st.info("💡 위치 권한 허용이 필요합니다. 잠시만 기다려주시거나 화면을 새로고침 해주세요.")
         else:
-            st.warning("⚠️ 시트 인증에 실패했습니다. 관리자 설정을 확인하세요.")
+            st.warning("⚠️ 구글 서비스 계정 인증에 실패했습니다. Secrets 설정을 다시 확인해주세요.")
 
 except Exception as e:
     st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
-
-st.divider()
-st.caption("관리자 승인 시 화면에 결과가 반영됩니다.")
-
