@@ -13,23 +13,24 @@ JSON_KEY = "key.json"
 
 st.set_page_config(page_title="노인일자리 관리시스템", layout="centered")
 
-# 구글 시트 연결 함수
 def get_gspread_client():
+    # 1. 시트 접근 권한 범위 설정
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Secrets 금고에 설정값이 있는지 확인
-    if "gcp_service_account" in st.secrets:
-        import json
-        # 문자열로 된 Secrets를 파이썬 딕셔너리(JSON) 형태로 변환
-        key_dict = json.loads(st.secrets["gcp_service_account"])
-        
-        # [수정된 부분] from_json_dict -> from_json_keyfile_dict 로 변경
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
-    else:
-        # 내 컴퓨터에서 실행할 때 (key.json 파일 사용)
-        creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEY, scope)
-        
-    return gspread.authorize(creds)
+    try:
+        if "gcp_service_account" in st.secrets:
+            import json
+            # Secrets에서 가져온 문자열을 JSON 객체로 변환
+            key_dict = json.loads(st.secrets["gcp_service_account"])
+            # gspread의 서비스 계정 인증 기능을 직접 사용 (가장 안전)
+            return gspread.service_account_from_dict(key_dict)
+        else:
+            # 내 컴퓨터에서 실행할 때
+            return gspread.service_account(filename=JSON_KEY)
+            
+    except Exception as e:
+        st.error(f"인증 처리 중 오류가 발생했습니다: {e}")
+        return None
 
 st.title("👵 노인일자리 출퇴근 시스템")
 
@@ -119,4 +120,5 @@ except Exception as e:
 st.divider()
 
 st.caption("관리자가 시트에서 '승인'을 입력하면 어르신 화면에 즉시 반영됩니다.")
+
 
