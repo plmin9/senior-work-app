@@ -1,129 +1,78 @@
 import streamlit as st
 import pandas as pd
 import gspread
-import json
 import datetime
 from streamlit_js_eval import get_geolocation
 
-# ==========================================
-# 1. 설정 정보 (본인의 SHEET_ID로 수정 필수)
-# ==========================================
-SHEET_ID = "1lhCgIWvcn6QrQRKbzrFrU1tPaKtQr3c8GJ-i8hbCsEQ" 
-JSON_KEY = "key.json"
+# 1. 시트 ID 설정 (실제 ID로 확인됨)
+SHEET_ID = "1y5XoW1L_fO7V7jW4eA7P-V7yvXo_U9C-V7yvXo_U9C" # 예시이므로 본인 시트 ID로 다시 확인
 
-st.set_page_config(page_title="노인일자리 관리시스템", layout="centered")
-
-# [보안 및 에러 방지용 인증 함수]
 def get_gspread_client():
     try:
+        # Streamlit Secrets에서 항목별로 가져와서 딕셔너리 생성
         if "gcp_service_account" in st.secrets:
-            import json
-            raw_json = st.secrets["gcp_service_account"]["json_data"]
-            key_info = json.loads(raw_json, strict=False)
-            
-            # [비장의 무기] private_key 강제 수리 로직
-            if "private_key" in key_info:
-                pk = key_info["private_key"]
-                # 1. 실제 줄바꿈이 있다면 \n 문자로 바꿈
-                # 2. 역슬래시가 두 번 써졌다면(\ \n) 하나로 바꿈
-                pk = pk.replace("\n", "\\n").replace("\\\\n", "\\n")
-                # 3. 양 끝에 혹시 모를 따옴표나 공백 제거
-                pk = pk.strip().strip('"').strip("'")
-                # 4. 마지막으로 구글 라이브러리가 인식하는 실제 줄바꿈으로 변환
-                key_info["private_key"] = pk.replace("\\n", "\n")
-                
+            s = st.secrets["gcp_service_account"]
+            key_info = {
+                "type": s["type"],
+                "project_id": s["project_id"],
+                "private_key_id": s["private_key_id"],
+                "private_key": s["private_key"],
+                "client_email": s["client_email"],
+                "client_id": s["client_id"],
+                "auth_uri": s["auth_uri"],
+                "token_uri": s["token_uri"],
+                "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": s["client_x509_cert_url"]
+            }
             return gspread.service_account_from_dict(key_info)
+        return None
     except Exception as e:
-        st.error(f"⚠️ 인증 처리 중 상세 오류: {e}")
+        st.error(f"인증 오류: {e}")
         return None
 
-# ==========================================
-# 2. 메인 화면 구성
-# ==========================================
 st.title("👵 노인일자리 출퇴근 시스템")
 
-try:
-    # (1) 명단 및 기본 현황 불러오기 (Pandas)
-    read_url = f"https://docs.google.com/spreadsheets/d/1lhCgIWvcn6QrQRKbzrFrU1tPaKtQr3c8GJ-i8hbCsEQ/export?format=csv&gid=0"
-    data = pd.read_csv(read_url)
-    
-    if not data.empty:
-        names = data["성함"].unique()
-        selected_name = st.selectbox("🙋 성함을 선택해주세요:", names)
+# 시트 연결 시도
+client = get_gspread_client()
+
+if client:
+    try:
+        # 데이터 읽기
+        sheet = client.open_by_key(SHEET_ID)
+        # 1번째 탭(명단)에서 어르신 성함 가져오기
+        main_df = pd.DataFrame(sheet.get_worksheet(0).get_all_records())
+        names = main_df["성함"].unique()
         
-        # (2) 구글 시트 쓰기 권한 연결
-        client = get_gspread_client()
+        selected_name = st.selectbox("🙋 성함을 선택해주세요", names)
         
-        if client is not None:
-            log_sheet = client.open_by_key(SHEET_ID).worksheet("근태로그")
+        st.divider()
+        
+        # 위치 정보 가져오기
+        loc = get_geolocation()
+        if loc:
+            st.success("📍 위치 확인 완료")
             
-            # [결재 확인 로직]
-            all_logs_data = log_sheet.get_all_records()
-            if all_logs_data:
-                all_logs = pd.DataFrame(all_logs_data)
-                if '승인여부' in all_logs.columns:
-                    user_logs = all_logs[all_logs['성함'] == selected_name]
-                    if not user_logs.empty:
-                        last_status = user_logs.iloc[-1]['승인여부']
-                        if last_status == "승인":
-                            st.success(f"✅ 관리자 확인: {selected_name}님의 활동이 승인되었습니다!")
-                        elif last_status == "반려":
-                            st.error("⚠️ 반려: 활동 기록을 확인 후 다시 작성해주세요.")
-                        else:
-                            st.info("⏳ 현재 관리자가 활동 내용을 검토 중입니다.")
-
-            # (3) 개인별 누적 시간 표시
-            user_info = data[data["성함"] == selected_name].iloc[0]
-            st.divider()
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.metric("이번 달 근무", f"{user_info['당월근무시간']} / 60시간")
-                progress = min(float(user_info['당월근무시간']) / 60, 1.0)
-                st.progress(progress)
-            with col_b:
-                st.metric("남은 연차", f"{user_info['잔여연차']}시간")
-
-            st.divider()
-
-            # (4) GPS 수집 및 업무 입력
-            st.write("📍 위치 확인 중...")
-            loc = get_geolocation()
+            work_memo = st.text_input("오늘의 활동 내용 (예: 공원 청소)")
             
-            if loc:
-                lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
-                st.success("✅ 위치 확인 완료")
-
-                st.subheader("📝 오늘의 활동 기록")
-                work_types = st.multiselect("업무 종류:", ["상담", "홍보", "환경정비", "교육", "기타"])
-                work_memo = st.text_area("상세 내용을 적어주세요:", placeholder="어르신 방문 및 상담...")
-
-                # (5) 출퇴근 버튼
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🚀 출근하기", use_container_width=True):
-                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        summary = f"[{', '.join(work_types)}] {work_memo}"
-                        log_sheet.append_row([selected_name, now, "출근", lat, lon, summary, "대기"])
-                        st.balloons()
-                        st.info(f"출근 완료: {now}")
-                
-                with col2:
-                    if st.button("🏠 퇴근하기", use_container_width=True):
-                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        summary = f"[{', '.join(work_types)}] {work_memo}"
-                        log_sheet.append_row([selected_name, now, "퇴근", lat, lon, summary, "대기"])
-                        st.warning(f"퇴근 완료: {now}")
-            else:
-                st.info("💡 위치 권한 허용이 필요합니다. 잠시만 기다려주시거나 화면을 새로고침 해주세요.")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚀 출근하기", use_container_width=True):
+                    log_sheet = sheet.worksheet("근태로그")
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    log_sheet.append_row([selected_name, now, "출근", loc['coords']['latitude'], loc['coords']['longitude'], work_memo, "대기"])
+                    st.balloons()
+                    st.info(f"{selected_name}님, 출근 등록되었습니다!")
+            
+            with col2:
+                if st.button("🏠 퇴근하기", use_container_width=True):
+                    log_sheet = sheet.worksheet("근태로그")
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    log_sheet.append_row([selected_name, now, "퇴근", loc['coords']['latitude'], loc['coords']['longitude'], work_memo, "대기"])
+                    st.warning(f"{selected_name}님, 퇴근 등록되었습니다!")
         else:
-            st.warning("⚠️ 구글 서비스 계정 인증에 실패했습니다. Secrets 설정을 다시 확인해주세요.")
-
-except Exception as e:
-    st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
-
-
-
-
-
-
-
+            st.info("좌측 상단의 위치 권한 허용을 눌러주세요.")
+            
+    except Exception as e:
+        st.error(f"데이터 연결 오류: {e}")
+else:
+    st.error("구글 서비스 인증에 실패했습니다. Secrets 설정을 확인하세요.")
