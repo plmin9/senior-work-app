@@ -16,25 +16,23 @@ st.set_page_config(page_title="노인일자리 관리시스템", layout="centere
 # [보안 및 에러 방지용 인증 함수]
 def get_gspread_client():
     try:
-        # Streamlit Cloud 환경
         if "gcp_service_account" in st.secrets:
-            # TOML 형식으로 저장된 데이터를 딕셔너리로 가져옴
-            key_info = dict(st.secrets["gcp_service_account"])
+            import json
+            # 1단계에서 만든 'json_data' 덩어리를 가져옵니다.
+            raw_json = st.secrets["gcp_service_account"]["json_data"]
             
-            # 주소 끝에 혹시 모를 공백 제거 (네트워크 오류 방지)
-            key_info["token_uri"] = "https://oauth2.google.com/token".strip()
-            key_info["auth_uri"] = "https://accounts.google.com/o/oauth2/auth".strip()
+            # 텍스트 덩어리를 실제 데이터(딕셔너리)로 변환
+            key_info = json.loads(raw_json, strict=False)
             
-            # 비밀키 줄바꿈 복원
+            # 혹시 모를 줄바꿈 깨짐 현상 최종 방어
             if "private_key" in key_info:
                 key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
-            
+                
             return gspread.service_account_from_dict(key_info)
         else:
             return gspread.service_account(filename=JSON_KEY)
     except Exception as e:
-        # 에러 발생 시 로그에 상세 출력
-        st.error(f"⚠️ 인증 네트워크 오류 발생: {e}")
+        st.error(f"⚠️ 인증 처리 중 상세 오류: {e}")
         return None
 
 # ==========================================
@@ -120,6 +118,7 @@ try:
 
 except Exception as e:
     st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+
 
 
 
