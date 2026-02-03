@@ -10,13 +10,28 @@ SHEET_ID = "1y5XoW1L_fO7V7jW4eA7P-V7yvXo_U9C-V7yvXo_U9C" # 예시이므로 본�
 def get_gspread_client():
     try:
         if "gcp_service_account" in st.secrets:
-            # Secrets 내용을 딕셔너리로 읽어옴
-            key_info = dict(st.secrets["gcp_service_account"])
+            s = st.secrets["gcp_service_account"]
             
-            # 혹시라도 섞여있을지 모를 \n 텍스트만 처리
-            if isinstance(key_info["private_key"], str):
-                key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
+            # [최종 방어 로직] 
+            # 1. 일단 양 끝의 작은따옴표나 공백을 완전히 제거합니다.
+            p_key = str(s["private_key"]).strip("'").strip()
             
+            # 2. 역슬래시가 2개 이상 겹친 모든 경우를 실제 줄바꿈으로 변환
+            # (Streamlit이 내부적으로 \n을 \\n으로 바꾸는 성질을 역이용합니다.)
+            p_key = p_key.replace("\\\\n", "\n").replace("\\n", "\n")
+            
+            key_info = {
+                "type": s["type"],
+                "project_id": s["project_id"],
+                "private_key_id": s["private_key_id"],
+                "private_key": p_key,
+                "client_email": s["client_email"],
+                "client_id": s["client_id"],
+                "auth_uri": s["auth_uri"],
+                "token_uri": s["token_uri"],
+                "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": s["client_x509_cert_url"]
+            }
             return gspread.service_account_from_dict(key_info)
         return None
     except Exception as e:
@@ -69,6 +84,7 @@ if client:
         st.error(f"데이터 연결 오류: {e}")
 else:
     st.error("구글 서비스 인증에 실패했습니다. Secrets 설정을 확인하세요.")
+
 
 
 
