@@ -17,14 +17,16 @@ st.set_page_config(page_title="노인일자리 관리시스템", layout="centere
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Secrets에서 정보를 가져옵니다.
-    # 만약 배포 상태라면 secrets를 쓰고, 로컬(내컴퓨터)라면 key.json을 쓰도록 만드는 안전한 코드입니다.
+    # Secrets 금고에 설정값이 있는지 확인
     if "gcp_service_account" in st.secrets:
         import json
+        # 문자열로 된 Secrets를 파이썬 딕셔너리(JSON) 형태로 변환
         key_dict = json.loads(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_dict(key_dict, scope)
+        
+        # [수정된 부분] from_json_dict -> from_json_keyfile_dict 로 변경
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
     else:
-        # 내 컴퓨터에서 테스트할 때용
+        # 내 컴퓨터에서 실행할 때 (key.json 파일 사용)
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEY, scope)
         
     return gspread.authorize(creds)
@@ -117,3 +119,4 @@ except Exception as e:
 st.divider()
 
 st.caption("관리자가 시트에서 '승인'을 입력하면 어르신 화면에 즉시 반영됩니다.")
+
