@@ -67,11 +67,12 @@ if client:
     sheet_attendance = doc.worksheet("근태기록")
     sheet_vacation = doc.worksheet("연차관리")
     
+    # 💡 get_all_records() 대신 안전하게 가져오기
     raw_vacation = sheet_vacation.get_all_values()
     if len(raw_vacation) > 1:
         df_vacation = pd.DataFrame(raw_vacation[1:], columns=raw_vacation[0])
     else:
-        df_vacation = pd.DataFrame()
+        df_vacation = pd.DataFrame(columns=["성함", "총연차", "사용연차", "잔여연차"])
 else: st.stop()
 
 # --- 3. 유틸리티 함수 ---
@@ -108,10 +109,8 @@ with tab_att:
     work_detail = st.text_input("상세 내용", placeholder="상세 내용을 적어주세요")
     combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
-    # 💡 이름 선택 여부 확인 로직
     is_user_selected = (selected_user != "성함을 선택해 주세요")
 
-    # 💡 이름 미선택 시 경고 안내 문구 복구
     if not is_user_selected:
         st.warning("⚠️ **성함을 먼저 선택**하셔야 버튼이 활성화됩니다.")
 
@@ -153,32 +152,39 @@ with tab_att:
                     sheet_attendance.update_cell(target_row, 5, "퇴근")
                     sheet_attendance.update_cell(target_row, 6, combined_work)
                     st.success("퇴근 확인되었습니다!")
-            except: st.error("기록 업데이트 중 오류 발생")
+            except: st.error("기록 업데이트 오류")
             st.balloons()
             st.rerun()
 
-    st.markdown('<div class="step-header">📍 위치 인증 확인</div>', unsafe_allow_html=True)
     if loc:
+        st.markdown('<div class="step-header">📍 위치 인증 확인</div>', unsafe_allow_html=True)
         m_col1, m_col2 = st.columns([2, 1])
         with m_col1:
             st.map(pd.DataFrame([{'latitude': loc['coords']['latitude'], 'longitude': loc['coords']['longitude']}]), zoom=16, use_container_width=True)
         with m_col2:
             st.markdown(f'<div class="loc-info">위도: {loc["coords"]["latitude"]:.6f}<br>경도: {loc["coords"]["longitude"]:.6f}</div>', unsafe_allow_html=True)
 
-# --- [나머지 탭 로직은 v6.4와 동일] ---
+# --- [사용자 전용] 휴가 탭 (에러 방지 로직 보강) ---
 with tab_vac:
     if is_user_selected and not df_vacation.empty:
         u_list = df_vacation[df_vacation['성함'] == selected_user]
         if not u_list.empty:
             u = u_list.iloc[0]
-            total = int(pd.to_numeric(u.get('총연차', 0), errors='coerce'))
-            used = int(pd.to_numeric(u.get('사용연차', 0), errors='coerce'))
+            # 💡 int() 변환 전 결측치(NaN) 처리 추가
+            total_val = pd.to_numeric(u.get('총연차', 0), errors='coerce')
+            used_val = pd.to_numeric(u.get('사용연차', 0), errors='coerce')
+            
+            total = int(total_val) if pd.notnull(total_val) else 0
+            used = int(used_val) if pd.notnull(used_val) else 0
             remain = total - used
+            
             st.markdown(f"### 🏖️ {selected_user} 어르신 휴가 현황")
+            st.write(f"전체: {total}일 / 사용: {used}일 / 남음: {remain}일")
             st.progress(remain/total if total > 0 else 0)
     else:
         st.warning("⚠️ 성함을 먼저 선택해 주세요.")
 
+# --- [관리자 전용] 관리자 모드 탭 ---
 with tab_admin:
     st.markdown('<div class="step-header">🔒 관리자 인증</div>', unsafe_allow_html=True)
     pw = st.text_input("관리자 비밀번호", type="password")
@@ -198,4 +204,4 @@ with tab_admin:
         with adm_tab2:
             st.dataframe(df_vacation, use_container_width=True)
 
-st.caption("실버 복지 사업단 v6.5 | 안내 문구 및 데이터 로직 최적화")
+st.caption("실버 복지 사업단 v6.6 | 연차 데이터 에러 보정 완료")
