@@ -100,7 +100,7 @@ with tab_attendance:
     if 'arrived' not in st.session_state: st.session_state.arrived = False
     if 'start_time' not in st.session_state: st.session_state.start_time = "-"
 
-    # 1. 출퇴근 시간 표시 카드 (상단 배치)
+    # 1. 출퇴근 시간 표시 카드
     st.markdown(f"""
         <div class="time-card">
             <div style="display:flex; justify-content:center; align-items:center; gap:20px;">
@@ -111,32 +111,40 @@ with tab_attendance:
         </div>
     """, unsafe_allow_html=True)
     
-    # 2. 버튼 배치 (상단 배치)
+    # 2. 버튼 배치
     loc = get_geolocation()
     col_btn1, col_btn2 = st.columns(2)
+    
     with col_btn1:
         if st.button("🚀 출근하기", use_container_width=True, type="primary", disabled=st.session_state.arrived or not loc):
             st.session_state.arrived = True
             st.session_state.start_time = datetime.now().strftime("%H:%M:%S")
             lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
+            # 구글 시트에 기록 (출근 행 추가)
             sheet_attendance.append_row([selected_user, now.strftime("%Y-%m-%d"), st.session_state.start_time, "", "출근", "", lat, lon])
             st.rerun()
+
     with col_btn2:
+        # 퇴근 버튼 클릭 시 동작 수정
         if st.button("🏠 퇴근하기", use_container_width=True, disabled=not st.session_state.arrived):
+            end_time = datetime.now().strftime("%H:%M:%S")
+            # 구글 시트에 기록 (퇴근 행 추가)
+            sheet_attendance.append_row([selected_user, now.strftime("%Y-%m-%d"), "", end_time, "퇴근", "", "", ""])
+            
             st.session_state.arrived = False
             st.session_state.start_time = "-"
-            st.success("고생하셨습니다!")
+            st.success("퇴근 기록이 완료되었습니다. 고생하셨습니다!")
+            st.rerun()
 
     st.divider()
 
-    # 3. 위치 정보 (하단 배치, 맵 사이즈 축소 및 정보 병렬 배치)
+    # 3. 위치 정보
     st.markdown("##### 📍 현재 위치 확인")
     if loc:
         lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
         col_map, col_gps = st.columns([1.5, 1])
         
         with col_map:
-            # 맵 높이를 조절하기 위해 표 형태로 시각화
             st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=14, use_container_width=True)
         
         with col_gps:
@@ -175,12 +183,14 @@ with tab_vacation:
     if st.button("➕ 휴가 신청하기", use_container_width=True):
         @st.dialog("새 휴가 신청")
         def apply_form():
-            st.date_input("날짜 선택")
-            st.selectbox("종류", ["연차", "반차", "병가"])
+            v_date = st.date_input("날짜 선택")
+            v_type = st.selectbox("종류", ["연차", "오전반차", "오후반차", "병가"])
             if st.button("제출"):
-                st.success("신청 완료")
+                # 휴가 신청 시에도 구글 시트에 기록
+                sheet_attendance.append_row([selected_user, v_date.strftime("%Y-%m-%d"), "", "", v_type, "휴가신청", "", ""])
+                st.success("신청이 완료되었습니다.")
                 st.rerun()
         apply_form()
 
 st.write("<br><br>", unsafe_allow_html=True)
-st.caption("실버 복지 사업단 v2.8")
+st.caption("실버 복지 사업단 v2.9")
