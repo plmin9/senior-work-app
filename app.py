@@ -11,22 +11,35 @@ st.set_page_config(page_title="스마트경로당지원 근태관리", layout="w
 st.markdown("""
     <style>
     .stApp { background-color: #F7F9FB; } 
-    .main-title { font-size: 1.8rem; font-weight: 800; color: #2E7D32; text-align: center; margin-bottom: 1rem; }
-    .custom-label { font-size: 1.15rem; font-weight: 800; color: #333; margin-bottom: 0.5rem; margin-top: 1rem; }
+    .main-title { font-size: 2rem; font-weight: 900; color: #2E7D32; text-align: center; margin-bottom: 1.5rem; }
     
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; border-bottom: none !important; }
-    .stTabs [data-baseweb="tab"] { flex: 1; height: 55px; font-size: 1.2rem !important; font-weight: 800 !important; border-radius: 12px 12px 0 0; border: none !important; }
-    .stTabs [aria-selected="true"] { background-color: #00838F !important; color: white !important; }
-    .stTabs [data-baseweb="tab-highlight"] { background-color: #00838F !important; height: 4px !important; }
-
-    div.stButton > button { 
-        border-radius: 15px; height: 5rem !important; font-size: 1.5rem !important; 
-        font-weight: 800 !important; background-color: #4CAF50 !important; color: white !important;
-        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+    /* 📌 문구 가독성 강화 스타일 */
+    .step-header {
+        background-color: #E0F2F1;
+        padding: 8px 15px;
+        border-left: 6px solid #00838F;
+        border-radius: 8px;
+        font-size: 1.3rem !important;
+        font-weight: 800 !important;
+        color: #004D40;
+        margin-top: 20px;
+        margin-bottom: 10px;
     }
-    div.stButton > button:disabled { background-color: #E0E0E0 !important; color: #9E9E9E !important; box-shadow: none !important; }
+
+    /* 탭 스타일 */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; border-bottom: none !important; }
+    .stTabs [data-baseweb="tab"] { flex: 1; height: 60px; font-size: 1.3rem !important; font-weight: 800 !important; border-radius: 12px 12px 0 0; }
+    .stTabs [aria-selected="true"] { background-color: #00838F !important; color: white !important; }
+    .stTabs [data-baseweb="tab-highlight"] { background-color: #00838F !important; height: 5px !important; }
+
+    /* 대형 버튼 */
+    div.stButton > button { 
+        border-radius: 15px; height: 5.5rem !important; font-size: 1.6rem !important; 
+        font-weight: 800 !important; background-color: #4CAF50 !important; color: white !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
     
-    /* 지도 박스 스타일 (강한 아웃라인) */
+    /* 지도 아웃라인 */
     .map-outline-box { border: 4px solid #004D40; border-radius: 15px; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
     </style>
 """, unsafe_allow_html=True)
@@ -68,20 +81,22 @@ if 'disp_start' not in st.session_state: st.session_state.disp_start = "-"
 if 'disp_end' not in st.session_state: st.session_state.disp_end = "-"
 if 'arrived' not in st.session_state: st.session_state.arrived = False
 
-# --- 5. 메인 화면 상단 ---
+# --- 5. 메인 화면 ---
 st.markdown('<div class="main-title">🏢 스마트경로당지원 근태관리</div>', unsafe_allow_html=True)
 
-cho = st.radio("초성 선택", ["전체", "ㄱ","ㄴ","ㄷ","ㄹ","ㅁ","ㅂ","ㅅ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"], horizontal=True)
+# 단계별 안내 문구 (강화된 스타일 적용)
+st.markdown('<div class="step-header">1️⃣ 성함의 초성(첫글자)을 선택하세요</div>', unsafe_allow_html=True)
+cho = st.radio("초성", ["전체", "ㄱ","ㄴ","ㄷ","ㄹ","ㅁ","ㅂ","ㅅ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"], horizontal=True, label_visibility="collapsed")
 
+st.markdown('<div class="step-header">2️⃣ 본인 성함을 선택하세요</div>', unsafe_allow_html=True)
 all_names = df_vacation['성함'].tolist() if not df_vacation.empty else []
 filtered_names = all_names if cho == "전체" else [n for n in all_names if get_chosung(n) == cho]
-selected_user = st.selectbox("본인 성함을 선택하세요", filtered_names if filtered_names else ["데이터 없음"])
+selected_user = st.selectbox("성함 선택", filtered_names if filtered_names else ["데이터 없음"], label_visibility="collapsed")
 
-# 업무 선택 및 입력
-st.markdown('<div class="custom-label">📝 수행 업무 선택 및 상세내용 입력</div>', unsafe_allow_html=True)
+st.markdown('<div class="step-header">3️⃣ 오늘 수행할 업무 내용을 입력하세요</div>', unsafe_allow_html=True)
 work_options = ["경로당 청소", "배식 및 주방지원", "시설물 안전점검", "사무 업무 보조", "행사 지원", "기타 활동"]
-selected_works = st.multiselect("업무 선택", work_options, placeholder="업무를 골라주세요")
-work_detail = st.text_input("상세 업무 입력", placeholder="상세 내용을 직접 적어주세요")
+selected_works = st.multiselect("업무 선택", work_options, placeholder="여기를 눌러 업무를 선택하세요")
+work_detail = st.text_input("상세 업무 입력", placeholder="추가로 하신 일이 있다면 여기에 적어주세요", label_visibility="collapsed")
 combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
 st.write("<br>", unsafe_allow_html=True)
@@ -94,11 +109,11 @@ with tab_attendance:
     today_date = now.strftime("%Y-%m-%d")
     
     st.markdown(f"""
-        <div style="background: white; padding: 20px; border-radius: 20px; border: 2px solid #00838F; text-align: center; margin-bottom: 20px;">
+        <div style="background: white; padding: 25px; border-radius: 20px; border: 3px solid #00838F; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:space-around; align-items:center;">
-                <div><div style="font-size:0.9rem; color:#888;">출근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_start}</div></div>
-                <div style="font-size:2.5rem; color:#00838F; font-weight:200;">|</div>
-                <div><div style="font-size:0.9rem; color:#888;">퇴근 시간</div><div style="font-size:2.5rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_end}</div></div>
+                <div><div style="font-size:1.1rem; color:#888; font-weight:bold;">출근 시간</div><div style="font-size:3rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_start}</div></div>
+                <div style="font-size:3rem; color:#00838F; font-weight:200;">|</div>
+                <div><div style="font-size:1.1rem; color:#888; font-weight:bold;">퇴근 시간</div><div style="font-size:3rem; font-weight:900; color:#2E7D32;">{st.session_state.disp_end}</div></div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -127,16 +142,14 @@ with tab_attendance:
                     sheet_attendance.update_cell(target_row, 4, st.session_state.disp_end)
                     sheet_attendance.update_cell(target_row, 5, "퇴근")
                     sheet_attendance.update_cell(target_row, 6, combined_work)
-                    st.success("퇴근 시간과 업무 내용이 저장되었습니다!")
-                else:
-                    sheet_attendance.append_row([selected_user, today_date, "", st.session_state.disp_end, "퇴근", combined_work, "", ""])
-            except Exception as e:
-                st.error(f"오류: {e}")
+                    st.success("✅ 퇴근 처리가 완료되었습니다!")
+                else: st.error("출근 기록을 찾을 수 없습니다.")
+            except Exception as e: st.error(f"오류: {e}")
             st.balloons()
             st.rerun()
 
-    # --- 7. 지도 및 위치 정보 (상단 st.divider() 제거됨) ---
-    st.markdown('<div class="custom-label">📍 현재 위치 확인</div>', unsafe_allow_html=True)
+    # --- 7. 지도 및 위치 정보 ---
+    st.markdown('<div class="step-header">📍 현재 위치 확인 (지도)</div>', unsafe_allow_html=True)
     if loc:
         lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
         m1, m2 = st.columns([1.2, 1])
@@ -145,12 +158,14 @@ with tab_attendance:
             st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=15, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with m2:
-            st.info(f"**수신 위치 정보**\n\n위도: `{lat:.6f}`\n\n경도: `{lon:.6f}`\n\nGPS 인증 완료")
+            st.info(f"📍 **위치 신호 정상**\n\n위도: `{lat:.6f}`\n\n경도: `{lon:.6f}`\n\n안전하게 인증되었습니다.")
+    else:
+        st.warning("📍 위치 정보를 가져오고 있습니다. 잠시만 기다려 주세요...")
 
 with tab_vacation:
-    st.markdown('<div class="custom-label">🏖️ 나의 휴가 현황</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-header">🏖️ 나의 휴가 현황</div>', unsafe_allow_html=True)
     if not df_vacation.empty and selected_user in df_vacation['성함'].values:
         u = df_vacation[df_vacation['성함'] == selected_user].iloc[0]
-        st.success(f"🌟 {selected_user}님, 남은 휴가는 **{u.get('잔여연차', 0)}일**입니다.")
+        st.success(f"🌟 {selected_user}님, 현재 남은 휴가는 **{u.get('잔여연차', 0)}일**입니다.")
 
-st.caption("실버 복지 사업단 v4.5 | UI 최적화 완료")
+st.caption("실버 복지 사업단 v4.6 | 고대비·고가독성 UI 적용")
