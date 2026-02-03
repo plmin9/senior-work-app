@@ -3,7 +3,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
+import pytz # 한국 시간 설정을 위해 추가
 from streamlit_js_eval import get_geolocation
+
+# --- 0. 시간 설정 (한국 표준시) ---
+# 서버가 해외에 있어도 한국 시간을 기준으로 작동하게 합니다.
+KST = pytz.timezone('Asia/Seoul')
 
 # --- 1. 페이지 설정 및 디자인 ---
 st.set_page_config(page_title="스마트경로당지원 근태관리", layout="wide")
@@ -88,7 +93,7 @@ loc = get_geolocation()
 # --- 5. 메인 화면 ---
 st.markdown('<div class="main-title">🏢 스마트경로당 통합 관리 시스템</div>', unsafe_allow_html=True)
 
-# 탭 구성 (관리자 모드 추가)
+# 탭 구성
 tab_att, tab_vac, tab_admin = st.tabs(["🕒 출퇴근 체크", "🏖️ 내 휴가 확인", "👨‍🏫 관리자 모드"])
 
 # --- [사용자 전용] 출퇴근 탭 ---
@@ -105,7 +110,7 @@ with tab_att:
     work_detail = st.text_input("상세 내용", placeholder="상세 내용을 적어주세요")
     combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
-    is_user_selected = (selected_user != "성함을 선택해 주세요" and selected_user != "데이터 없음")
+    is_user_selected = (selected_user != "성함을 선택해 주세요")
 
     if not is_user_selected:
         st.warning("⚠️ **성함을 먼저 선택**하셔야 버튼이 활성화됩니다.")
@@ -128,18 +133,22 @@ with tab_att:
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("출근하기", use_container_width=True, disabled=not is_user_selected or st.session_state.arrived or not loc):
-            st.session_state.disp_start = datetime.now().strftime("%H:%M:%S")
+            # 💡 한국 시간 적용
+            now_kst = datetime.now(KST)
+            st.session_state.disp_start = now_kst.strftime("%H:%M:%S")
             st.session_state.arrived = True
             lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
-            sheet_attendance.append_row([selected_user, datetime.now().strftime("%Y-%m-%d"), st.session_state.disp_start, "", "출근", combined_work, lat, lon])
+            sheet_attendance.append_row([selected_user, now_kst.strftime("%Y-%m-%d"), st.session_state.disp_start, "", "출근", combined_work, lat, lon])
             st.rerun()
             
     with col_btn2:
         if st.button("퇴근하기", use_container_width=True, disabled=not is_user_selected or not st.session_state.arrived or st.session_state.disp_end != "-"):
-            st.session_state.disp_end = datetime.now().strftime("%H:%M:%S")
+            # 💡 한국 시간 적용
+            now_kst = datetime.now(KST)
+            st.session_state.disp_end = now_kst.strftime("%H:%M:%S")
             try:
                 all_records = sheet_attendance.get_all_values()
-                today_str = datetime.now().strftime("%Y-%m-%d")
+                today_str = now_kst.strftime("%Y-%m-%d")
                 target_row = next((i+1 for i, r in enumerate(all_records) if r[0]==selected_user and r[1]==today_str and r[4]=="출근"), -1)
                 if target_row != -1:
                     sheet_attendance.update_cell(target_row, 4, st.session_state.disp_end)
@@ -182,17 +191,18 @@ with tab_admin:
     st.markdown('<div class="step-header">🔒 관리자 인증</div>', unsafe_allow_html=True)
     pw = st.text_input("관리자 비밀번호를 입력하세요", type="password")
     
-    if pw == "1234": # ⬅️ 비밀번호를 여기서 수정하세요
-        st.success("✅ 인증 성공! 전체 데이터를 확인합니다.")
+    if pw == "1234":
+        st.success("✅ 인증 성공! 한국 표준시 기준으로 데이터를 불러옵니다.")
         
         adm_tab1, adm_tab2 = st.tabs(["📅 오늘 출근 명단", "📊 전체 연차 현황"])
         
         with adm_tab1:
-            st.markdown("### 📋 오늘 출근자 명단")
+            # 💡 한국 현재 날짜 기준 필터링
+            today_kst = datetime.now(KST).strftime("%Y-%m-%d")
+            st.markdown(f"### 📋 오늘({today_kst}) 출근자 명단")
             try:
                 all_att = pd.DataFrame(sheet_attendance.get_all_records())
-                today = datetime.now().strftime("%Y-%m-%d")
-                df_today = all_att[all_att['날짜'] == today]
+                df_today = all_att[all_att['날짜'] == today_kst]
                 if not df_today.empty:
                     st.dataframe(df_today, use_container_width=True)
                 else:
@@ -207,4 +217,4 @@ with tab_admin:
     elif pw != "":
         st.error("비밀번호가 틀렸습니다.")
 
-st.caption("실버 복지 사업단 v6.0 | 관리자 대시보드 탑재")
+st.caption("실버 복지 사업단 v6.2 | KST 한국 표준시 적용 완료")
