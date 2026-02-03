@@ -59,7 +59,7 @@ if client:
     df_vacation = pd.DataFrame(sheet_vacation.get_all_records())
 else: st.stop()
 
-# --- 3. 초성 추출 함수 ---
+# --- 3. 유틸리티 함수 ---
 def get_chosung(text):
     CHOSUNG_LIST = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ']
     if not text: return ""
@@ -74,7 +74,7 @@ if 'arrived' not in st.session_state: st.session_state.arrived = False
 # --- 5. 메인 화면 ---
 st.markdown('<div class="main-title">🏢 스마트경로당지원 근태관리</div>', unsafe_allow_html=True)
 
-# 초성 선택 (복구 완료!)
+# 초성 선택
 st.markdown('<div class="custom-label">초성 선택</div>', unsafe_allow_html=True)
 cho = st.radio("초성", ["전체", "ㄱ","ㄴ","ㄷ","ㄹ","ㅁ","ㅂ","ㅅ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"], horizontal=True, label_visibility="collapsed")
 
@@ -84,10 +84,16 @@ all_names = df_vacation['성함'].tolist() if not df_vacation.empty else []
 filtered_names = all_names if cho == "전체" else [n for n in all_names if get_chosung(n) == cho]
 selected_user = st.selectbox("성함 선택", filtered_names if filtered_names else ["데이터 없음"], label_visibility="collapsed")
 
-# 업무 내용 선택
-st.markdown('<div class="custom-label">📝 오늘 수행할 업무를 선택해 주세요</div>', unsafe_allow_html=True)
-work_options = ["경로당 청소", "배식 및 주방지원", "시설물 안전점검", "사무 업무 보조", "기타 활동"]
-selected_work = st.selectbox("업무 내용", work_options, label_visibility="collapsed")
+# --- 업무 내용 다중 선택 및 상세 입력 ---
+st.markdown('<div class="custom-label">📝 오늘 수행할 업무를 모두 선택해 주세요 (중복 가능)</div>', unsafe_allow_html=True)
+work_options = ["경로당 청소", "배식 및 주방지원", "시설물 안전점검", "사무 업무 보조", "행사 지원", "기타 활동"]
+selected_works = st.multiselect("업무 선택", work_options, placeholder="업무를 골라주세요")
+
+st.markdown('<div class="custom-label">✏️ 상세 업무 내용 (직접 입력)</div>', unsafe_allow_html=True)
+work_detail = st.text_input("상세 업무 입력", placeholder="예: 거실 바닥 청소 및 가스점검 완료", label_visibility="collapsed")
+
+# 최종 저장될 업무 텍스트 합치기
+combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
 st.write("<br>", unsafe_allow_html=True)
 
@@ -110,11 +116,15 @@ with tab_attendance:
     
     with col1:
         if st.button("🚀 출근하기", use_container_width=True, disabled=st.session_state.arrived or not loc):
-            st.session_state.disp_start = datetime.now().strftime("%H:%M:%S")
-            st.session_state.arrived = True
-            lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
-            sheet_attendance.append_row([selected_user, today_date, st.session_state.disp_start, "", "출근", selected_work, lat, lon])
-            st.rerun()
+            if not selected_works and not work_detail:
+                st.warning("⚠️ 수행할 업무를 선택하거나 내용을 적어주세요!")
+            else:
+                st.session_state.disp_start = datetime.now().strftime("%H:%M:%S")
+                st.session_state.arrived = True
+                lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
+                # 업무내용 컬럼(6번째)에 다중선택+상세내용 통합 저장
+                sheet_attendance.append_row([selected_user, today_date, st.session_state.disp_start, "", "출근", combined_work, lat, lon])
+                st.rerun()
             
     with col2:
         if st.button("🏠 퇴근하기", use_container_width=True, disabled=not st.session_state.arrived or st.session_state.disp_end != "-"):
@@ -126,9 +136,9 @@ with tab_attendance:
                     if row[0] == selected_user and row[1] == today_date and row[4] == "출근":
                         target_row_idx = i + 1
                 if target_row_idx != -1:
-                    sheet_attendance.update_cell(target_row_idx, 4, st.session_state.disp_end) # 퇴근시간 기록
-                    sheet_attendance.update_cell(target_row_idx, 5, "퇴근") # 상태 업데이트
-                    st.success("퇴근 확인되었습니다!")
+                    sheet_attendance.update_cell(target_row_idx, 4, st.session_state.disp_end)
+                    sheet_attendance.update_cell(target_row_idx, 5, "퇴근")
+                    st.success("오늘 하루도 고생 많으셨습니다!")
                 else: st.error("출근 기록을 찾을 수 없습니다.")
             except Exception as e: st.error(f"오류: {e}")
             st.balloons()
@@ -152,4 +162,4 @@ with tab_vacation:
         u = df_vacation[df_vacation['성함'] == selected_user].iloc[0]
         st.success(f"🌟 {selected_user}님, 남은 휴가는 **{u.get('잔여연차', 0)}일**입니다.")
 
-st.caption("실버 복지 사업단 v4.1 | 초성검색 & 업무보존 통합")
+st.caption("실버 복지 사업단 v4.2 | 업무 다중선택 & 서술형 입력 지원")
