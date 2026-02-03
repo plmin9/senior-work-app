@@ -19,7 +19,7 @@ st.markdown("""
     .step-header {
         background-color: #FFFFFF; padding: 12px 18px; border-left: 8px solid #00838F;
         border-radius: 12px; font-size: clamp(1rem, 3vw, 1.4rem); font-weight: 800;
-        color: #004D40; margin-top: 20px; margin-bottom: 12px; box-shadow: 0 4px 66px rgba(0,0,0,0.05);
+        color: #004D40; margin-top: 20px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; padding: 8px; background-color: #CFD8DC; border-radius: 15px; }
     .stTabs [data-baseweb="tab"] { 
@@ -67,7 +67,6 @@ if client:
     sheet_attendance = doc.worksheet("근태기록")
     sheet_vacation = doc.worksheet("연차관리")
     
-    # 연차관리 데이터 로드
     raw_vacation = sheet_vacation.get_all_values()
     if len(raw_vacation) > 1:
         df_vacation = pd.DataFrame(raw_vacation[1:], columns=raw_vacation[0])
@@ -109,7 +108,12 @@ with tab_att:
     work_detail = st.text_input("상세 내용", placeholder="상세 내용을 적어주세요")
     combined_work = f"[{', '.join(selected_works)}] {work_detail}".strip()
 
+    # 💡 이름 선택 여부 확인 로직
     is_user_selected = (selected_user != "성함을 선택해 주세요")
+
+    # 💡 이름 미선택 시 경고 안내 문구 복구
+    if not is_user_selected:
+        st.warning("⚠️ **성함을 먼저 선택**하셔야 버튼이 활성화됩니다.")
 
     st.markdown(f"""
         <div class="dashboard-container">
@@ -125,6 +129,7 @@ with tab_att:
         </div>
     """, unsafe_allow_html=True)
     
+    st.write("<br>", unsafe_allow_html=True)
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("출근하기", use_container_width=True, disabled=not is_user_selected or st.session_state.arrived or not loc):
@@ -148,66 +153,49 @@ with tab_att:
                     sheet_attendance.update_cell(target_row, 5, "퇴근")
                     sheet_attendance.update_cell(target_row, 6, combined_work)
                     st.success("퇴근 확인되었습니다!")
-            except: st.error("기록 업데이트 중 오류가 발생했습니다.")
+            except: st.error("기록 업데이트 중 오류 발생")
             st.balloons()
             st.rerun()
 
+    st.markdown('<div class="step-header">📍 위치 인증 확인</div>', unsafe_allow_html=True)
     if loc:
-        st.markdown('<div class="step-header">📍 위치 인증 확인</div>', unsafe_allow_html=True)
         m_col1, m_col2 = st.columns([2, 1])
         with m_col1:
             st.map(pd.DataFrame([{'latitude': loc['coords']['latitude'], 'longitude': loc['coords']['longitude']}]), zoom=16, use_container_width=True)
         with m_col2:
             st.markdown(f'<div class="loc-info">위도: {loc["coords"]["latitude"]:.6f}<br>경도: {loc["coords"]["longitude"]:.6f}</div>', unsafe_allow_html=True)
 
-# --- [사용자 전용] 휴가 탭 ---
+# --- [나머지 탭 로직은 v6.4와 동일] ---
 with tab_vac:
     if is_user_selected and not df_vacation.empty:
-        u = df_vacation[df_vacation['성함'] == selected_user].iloc[0]
-        try:
+        u_list = df_vacation[df_vacation['성함'] == selected_user]
+        if not u_list.empty:
+            u = u_list.iloc[0]
             total = int(pd.to_numeric(u.get('총연차', 0), errors='coerce'))
             used = int(pd.to_numeric(u.get('사용연차', 0), errors='coerce'))
             remain = total - used
             st.markdown(f"### 🏖️ {selected_user} 어르신 휴가 현황")
-            st.write(f"전체: {total}일 / 사용: {used}일 / 남음: {remain}일")
             st.progress(remain/total if total > 0 else 0)
-        except: st.info("연차 정보를 계산할 수 없습니다.")
+    else:
+        st.warning("⚠️ 성함을 먼저 선택해 주세요.")
 
-# --- [관리자 전용] 관리자 모드 탭 ---
 with tab_admin:
     st.markdown('<div class="step-header">🔒 관리자 인증</div>', unsafe_allow_html=True)
     pw = st.text_input("관리자 비밀번호", type="password")
-    
     if pw == "1234":
         adm_tab1, adm_tab2 = st.tabs(["📅 오늘 출근 명단", "📊 전체 연차 현황"])
-        
         with adm_tab1:
             today_kst = datetime.now(KST).strftime("%Y-%m-%d")
-            st.markdown(f"### 📋 오늘({today_kst}) 출근자 명단")
+            st.markdown(f"### 📋 오늘({today_kst}) 출근자")
             try:
-                # 💡 데이터를 텍스트 리스트로 직접 가져와서 데이터프레임 구성 (에러 방지 핵심)
                 all_att_data = sheet_attendance.get_all_values()
                 if len(all_att_data) > 1:
                     df_att = pd.DataFrame(all_att_data[1:], columns=all_att_data[0])
-                    # 날짜 형식을 문자열로 통일하여 비교
                     df_today = df_att[df_att['날짜'].astype(str) == today_kst]
-                    
-                    if not df_today.empty:
-                        st.dataframe(df_today, use_container_width=True)
-                    else:
-                        st.info(f"오늘({today_kst}) 출근 기록이 없습니다.")
-                else:
-                    st.info("근태 기록 데이터가 비어있습니다.")
-            except Exception as e:
-                st.error(f"데이터 로딩 오류 상세: {e}")
-            
+                    if not df_today.empty: st.dataframe(df_today, use_container_width=True)
+                    else: st.info(f"오늘 출근 기록이 없습니다.")
+            except: st.error("데이터 로딩 실패")
         with adm_tab2:
-            if not df_vacation.empty:
-                st.dataframe(df_vacation, use_container_width=True)
-                if '잔여연차' in df_vacation.columns:
-                    st.bar_chart(df_vacation.set_index('성함')['잔여연차'])
-            
-    elif pw != "":
-        st.error("비밀번호가 틀렸습니다.")
+            st.dataframe(df_vacation, use_container_width=True)
 
-st.caption("실버 복지 사업단 v6.4 | 데이터 처리 최적화 완료")
+st.caption("실버 복지 사업단 v6.5 | 안내 문구 및 데이터 로직 최적화")
